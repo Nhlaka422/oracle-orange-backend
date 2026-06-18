@@ -168,7 +168,7 @@ def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db))
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Token has expired. Please request a new one."
         )
-    //tfrtyrfyt
+    
     # Update password
     user.set_password(request.new_password)
     user.reset_token = None
