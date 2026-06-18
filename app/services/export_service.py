@@ -1,5 +1,5 @@
 from io import BytesIO
-import pandas as pd
+import csv
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
@@ -10,20 +10,66 @@ from datetime import datetime
 class ExportService:
     @staticmethod
     def export_to_excel(data: list, columns: list, filename: str = "report.xlsx"):
-        """Export data to Excel"""
+        """Export data to Excel using openpyxl directly"""
         if not data:
             return None
         
-        df = pd.DataFrame(data)
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Data', index=False)
+        try:
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, Alignment, PatternFill
+            from openpyxl.utils import get_column_letter
+            
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Data"
+            
+            # Add headers
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="F97316", end_color="F97316", fill_type="solid")
+            
+            for col_idx, column in enumerate(columns, 1):
+                cell = ws.cell(row=1, column=col_idx, value=column)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+            
+            # Add data rows
+            for row_idx, row in enumerate(data, 2):
+                for col_idx, column in enumerate(columns, 1):
+                    value = row.get(column, '')
+                    ws.cell(row=row_idx, column=col_idx, value=value)
+            
             # Auto-adjust column widths
-            for column in df:
-                column_length = max(df[column].astype(str).map(len).max(), len(column))
-                col_idx = df.columns.get_loc(column)
-                writer.sheets['Data'].column_dimensions[chr(65 + col_idx)].width = min(column_length + 2, 30)
-        
+            for col_idx, column in enumerate(columns, 1):
+                max_length = max(
+                    len(str(column)),
+                    max([len(str(row.get(column, ''))) for row in data[:100]]) if data else 0
+                )
+                ws.column_dimensions[get_column_letter(col_idx)].width = min(max_length + 2, 30)
+            
+            output = BytesIO()
+            wb.save(output)
+            output.seek(0)
+            return output
+            
+        except Exception as e:
+            # Fallback to CSV if openpyxl fails
+            return ExportService._export_to_csv(data, columns)
+    
+    @staticmethod
+    def _export_to_csv(data: list, columns: list):
+        """Fallback export to CSV"""
+        output = BytesIO()
+        # Write BOM for UTF-8
+        output.write(b'\xef\xbb\xbf')
+        # Write CSV
+        csv_output = BytesIO()
+        import csv
+        writer = csv.writer(csv_output)
+        writer.writerow(columns)
+        for row in data:
+            writer.writerow([row.get(col, '') for col in columns])
+        output.write(csv_output.getvalue())
         output.seek(0)
         return output
     
@@ -65,7 +111,7 @@ class ExportService:
         # Table data
         table_data = [columns]
         for row in data[:1000]:  # Limit to 1000 rows for PDF
-            table_data.append([row.get(col, '') for col in columns])
+            table_data.append([str(row.get(col, '')) for col in columns])
         
         # Table style
         table = Table(table_data)
