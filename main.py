@@ -8,14 +8,14 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware - FIXED
+# CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://oracle-orange-frontend.onrender.com",  # Your frontend URL
-        "http://localhost:3000",                        # Local development
+        "https://oracle-orange-frontend.onrender.com",
+        "http://localhost:3000",
         "http://localhost:3001",
-        "https://*.onrender.com",                       # Allow all render.com subdomains
+        "https://*.onrender.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

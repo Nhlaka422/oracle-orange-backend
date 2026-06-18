@@ -1,13 +1,24 @@
 import os
 import tempfile
-import re
 from typing import Dict
+import google.generativeai as genai
 
 class SmartAIService:
     def __init__(self):
         self.documents = []
-        self.use_ollama = False  # Disable Ollama on Render
-        print("✅ Smart AI Service initialized (Pattern Matching Mode)")
+        self.api_key = os.getenv("GEMINI_API_KEY")
+        
+        if self.api_key:
+            try:
+                genai.configure(api_key=self.api_key)
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                print("✅ Smart AI Service initialized with Google Gemini (FREE!)")
+            except Exception as e:
+                print(f"⚠️ Error initializing Gemini: {e}")
+                self.model = None
+        else:
+            print("⚠️ No GEMINI_API_KEY found. Using pattern matching fallback.")
+            self.model = None
 
     def process_document(self, file_content: bytes, filename: str) -> str:
         try:
@@ -69,6 +80,16 @@ class SmartAIService:
 
     def query_with_context(self, question: str) -> Dict:
         try:
+            # If no API key or model, use pattern matching fallback
+            if not self.model:
+                return {
+                    "success": True,
+                    "response": self._fallback_response(question),
+                    "used_context": False,
+                    "documents_used": len(self.documents)
+                }
+
+            # Build context from documents
             context = ""
             if self.documents:
                 context = "Document Context:\n\n"
@@ -77,38 +98,60 @@ class SmartAIService:
                     context += doc['text'][:2000] + "\n\n"
                 context = context[:6000]
 
-            response = self._get_ai_response(question, context)
+            # Build prompt
+            if context:
+                prompt = f"""
+You are Oracle Orange, an AI business analyst assistant. You help users analyze data, documents, and provide business insights. Be thorough, professional, and helpful.
+
+{context}
+
+User Question: {question}
+
+Please answer based on the context above. If the context doesn't contain the exact answer, use your general knowledge but be honest about it.
+Be thorough and professional in your response.
+"""
+            else:
+                prompt = f"""
+You are Oracle Orange, an AI business analyst assistant. You help users analyze data, documents, and provide business insights. Be thorough, professional, and helpful.
+
+User Question: {question}
+
+Please provide a helpful, thorough response. If you don't know something, be honest about it.
+"""
+
+            response = self.model.generate_content(prompt)
             
             return {
                 "success": True,
-                "response": response,
+                "response": response.text,
                 "used_context": bool(context),
                 "documents_used": len(self.documents)
             }
 
         except Exception as e:
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": f"⚠️ Gemini Error: {str(e)}"
+            }
 
-    def _get_ai_response(self, question: str, context: str = "") -> str:
-        """Generate responses using pattern matching (NO AI REQUIRED)"""
+    def _fallback_response(self, question: str) -> str:
+        """Fallback pattern matching response when Gemini is not available"""
         question_lower = question.lower()
         
-        # Document-related questions
         if "summarise" in question_lower or "summarize" in question_lower:
             if self.documents:
                 doc = self.documents[-1]
-                text = doc['text'][:1000]
+                text = doc['text'][:500]
                 return f"""📄 **Document Summary**
 
 **File:** {doc['filename']}
 
 **Content Preview:**
-{text[:500]}...
+{text}...
 
 **Document Stats:**
 - Total characters: {len(doc['text'])}
 - Word count: {len(doc['text'].split())}
-- Line count: {len(doc['text'].splitlines())}
 
 I've analyzed this document. What specific information would you like to know?"""
             return "No documents have been uploaded yet. Please upload a document first."
@@ -121,20 +164,16 @@ I've analyzed this document. What specific information would you like to know?""
 **Size:** {len(doc['text'])} characters
 
 **Key Information:**
-- The document contains {len(doc['text'].split())} words
-- {len(doc['text'].splitlines())} lines of text
-- Document has been processed and is ready for queries
+- {len(doc['text'].split())} words
+- {len(doc['text'].splitlines())} lines
 
 **What would you like to know about this document?**
 - "Summarise the document"
 - "Extract key points"
 - "Find specific information"
-- "Analyze the content"
 """
 
-        # Default response for general questions
-        if not self.documents:
-            return """💡 **I Can Help With:**
+        return """💡 **I Can Help With:**
 
 **Business Data Questions:**
 - "Show me total revenue by month for 2024"
@@ -148,18 +187,5 @@ I've analyzed this document. What specific information would you like to know?""
 - "Extract key points"
 
 **Need something specific? Just ask!** 🚀"""
-
-        return """💡 **I Can Help With Your Documents:**
-
-You have uploaded documents. Ask me:
-- "Summarise the document"
-- "What does it say about X?"
-- "Extract key points"
-
-**Or ask about your business data:**
-- "Show me total revenue by month"
-- "What are our top products?"
-- "Show me customer segments"
-"""
 
 ai_service = SmartAIService()
