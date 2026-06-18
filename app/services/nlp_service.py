@@ -2,7 +2,6 @@ import sqlglot
 from sqlalchemy import text
 from ..core.database import SessionLocal
 from .sql_validator import SQLValidator
-import pandas as pd
 import re
 
 class NL2SQLService:
