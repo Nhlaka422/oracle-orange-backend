@@ -1,29 +1,13 @@
 import os
 import tempfile
-import requests
-import json
+import re
 from typing import Dict
 
 class SmartAIService:
     def __init__(self):
         self.documents = []
-        self.ollama_url = "http://localhost:11434/api/generate"
-        self.model = "llama3.2:3b"
-        self._check_ollama()
-        print(f"✅ Smart AI Service initialized with Ollama (Model: {self.model})")
-
-    def _check_ollama(self):
-        """Check if Ollama is running"""
-        try:
-            response = requests.get("http://localhost:11434", timeout=2)
-            if response.status_code == 200:
-                print("✅ Ollama is running!")
-            else:
-                print("⚠️ Ollama is running but returned unexpected status")
-        except:
-            print("⚠️ Ollama is NOT running!")
-            print("Please start Ollama first:")
-            print("  ollama serve")
+        self.use_ollama = False  # Disable Ollama on Render
+        print("✅ Smart AI Service initialized (Pattern Matching Mode)")
 
     def process_document(self, file_content: bytes, filename: str) -> str:
         try:
@@ -93,22 +77,7 @@ class SmartAIService:
                     context += doc['text'][:2000] + "\n\n"
                 context = context[:6000]
 
-            if context:
-                prompt = f"""You are Oracle Orange, a business analyst AI assistant.
-
-{context}
-
-User Question: {question}
-
-Please answer based on the context above. If the context doesn't contain the exact answer, use your general knowledge but be honest about it. Be thorough and professional in your response."""
-            else:
-                prompt = f"""You are Oracle Orange, a business analyst AI assistant.
-
-User Question: {question}
-
-Please provide a helpful, thorough response. If you don't know something, be honest about it."""
-
-            response = self._get_ai_response(prompt)
+            response = self._get_ai_response(question, context)
             
             return {
                 "success": True,
@@ -120,37 +89,77 @@ Please provide a helpful, thorough response. If you don't know something, be hon
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-    def _get_ai_response(self, prompt: str) -> str:
-        """Get response from Ollama"""
-        try:
-            response = requests.post(
-                self.ollama_url,
-                json={
-                    "model": self.model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "temperature": 0.3,
-                    "max_tokens": 1000
-                },
-                timeout=60
-            )
+    def _get_ai_response(self, question: str, context: str = "") -> str:
+        """Generate responses using pattern matching (NO AI REQUIRED)"""
+        question_lower = question.lower()
+        
+        # Document-related questions
+        if "summarise" in question_lower or "summarize" in question_lower:
+            if self.documents:
+                doc = self.documents[-1]
+                text = doc['text'][:1000]
+                return f"""📄 **Document Summary**
 
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("response", "No response from AI")
-            else:
-                return f"⚠️ **Ollama Error: {response.status_code}**\n\n{response.text[:200]}"
+**File:** {doc['filename']}
 
-        except requests.exceptions.Timeout:
-            return "⚠️ **Timeout:** The AI is taking too long. Try a simpler question."
-        except requests.exceptions.ConnectionError:
-            return """⚠️ **Connection Error:** Can't reach Ollama.
+**Content Preview:**
+{text[:500]}...
 
-Make sure Ollama is running:
-1. Open the Ollama app
-2. Or run: `ollama serve`
-3. Then try again!"""
-        except Exception as e:
-            return f"⚠️ **AI Error:** {str(e)}"
+**Document Stats:**
+- Total characters: {len(doc['text'])}
+- Word count: {len(doc['text'].split())}
+- Line count: {len(doc['text'].splitlines())}
+
+I've analyzed this document. What specific information would you like to know?"""
+            return "No documents have been uploaded yet. Please upload a document first."
+
+        if "document" in question_lower and self.documents:
+            doc = self.documents[-1]
+            return f"""📄 **Document Analysis**
+
+**File:** {doc['filename']}
+**Size:** {len(doc['text'])} characters
+
+**Key Information:**
+- The document contains {len(doc['text'].split())} words
+- {len(doc['text'].splitlines())} lines of text
+- Document has been processed and is ready for queries
+
+**What would you like to know about this document?**
+- "Summarise the document"
+- "Extract key points"
+- "Find specific information"
+- "Analyze the content"
+"""
+
+        # Default response for general questions
+        if not self.documents:
+            return """💡 **I Can Help With:**
+
+**Business Data Questions:**
+- "Show me total revenue by month for 2024"
+- "What are our top 5 selling products?"
+- "Show me customer segments"
+- "What's the average order value?"
+
+**Document Questions (after upload):**
+- "Summarise the document"
+- "What does the document say about X?"
+- "Extract key points"
+
+**Need something specific? Just ask!** 🚀"""
+
+        return """💡 **I Can Help With Your Documents:**
+
+You have uploaded documents. Ask me:
+- "Summarise the document"
+- "What does it say about X?"
+- "Extract key points"
+
+**Or ask about your business data:**
+- "Show me total revenue by month"
+- "What are our top products?"
+- "Show me customer segments"
+"""
 
 ai_service = SmartAIService()
