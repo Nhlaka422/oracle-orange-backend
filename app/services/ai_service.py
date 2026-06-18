@@ -186,6 +186,6 @@ I've analyzed this document. What specific information would you like to know?""
 - "What does the document say about X?"
 - "Extract key points"
 
-**Need something specific? Just ask!** 🚀"""
+**Need something specific? Just ask** 🚀"""
 
 ai_service = SmartAIService()
