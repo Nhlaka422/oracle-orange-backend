@@ -11,6 +11,7 @@ class SmartAIService:
         if self.api_key:
             try:
                 genai.configure(api_key=self.api_key)
+                # Use the correct model name
                 self.model = genai.GenerativeModel('gemini-1.5-flash')
                 print("✅ Smart AI Service initialized with Google Gemini (FREE!)")
             except Exception as e:
@@ -119,14 +120,46 @@ User Question: {question}
 Please provide a helpful, thorough response. If you don't know something, be honest about it.
 """
 
-            response = self.model.generate_content(prompt)
+            # Try different model names if one fails
+            models_to_try = [
+                'gemini-1.5-flash',
+                'gemini-1.5-pro',
+                'gemini-pro',
+                'models/gemini-1.5-flash',
+                'models/gemini-pro'
+            ]
             
-            return {
-                "success": True,
-                "response": response.text,
-                "used_context": bool(context),
-                "documents_used": len(self.documents)
-            }
+            last_error = None
+            for model_name in models_to_try:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    response = model.generate_content(prompt)
+                    return {
+                        "success": True,
+                        "response": response.text,
+                        "used_context": bool(context),
+                        "documents_used": len(self.documents)
+                    }
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+            
+            # If all models fail, try with a simpler prompt
+            try:
+                # Try with just the question
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                response = model.generate_content(question)
+                return {
+                    "success": True,
+                    "response": response.text,
+                    "used_context": False,
+                    "documents_used": len(self.documents)
+                }
+            except Exception as e:
+                return {
+                    "success": False,
+                    "error": f"⚠️ Gemini Error: {last_error}"
+                }
 
         except Exception as e:
             return {
@@ -186,6 +219,6 @@ I've analyzed this document. What specific information would you like to know?""
 - "What does the document say about X?"
 - "Extract key points"
 
-**Need something specific? Just ask** 🚀"""
+**Need something specific? Just ask!** 🚀"""
 
 ai_service = SmartAIService()
