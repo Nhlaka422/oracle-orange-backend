@@ -7,17 +7,49 @@ class SmartAIService:
     def __init__(self):
         self.documents = []
         self.api_key = os.getenv("GEMINI_API_KEY")
+        self.model_names = [
+            'gemini-1.5-flash',      # Most likely to work
+            'gemini-1.5-pro',        # More capable
+            'gemini-pro',            # Older version
+            'models/gemini-1.5-flash',
+            'models/gemini-1.5-pro',
+            'models/gemini-pro',
+        ]
+        self.working_model = None
         
         if self.api_key and len(self.api_key) > 20:
             try:
                 self.client = genai.Client(api_key=self.api_key)
-                print("✅ Smart AI Service initialized with Google Gemini (NEW SDK)")
+                # Try to find a working model
+                self._find_working_model()
+                if self.working_model:
+                    print(f"✅ Smart AI Service initialized with Google Gemini ({self.working_model})")
+                else:
+                    print(f"⚠️ No working Gemini model found. Using fallback.")
+                    self.client = None
             except Exception as e:
                 print(f"⚠️ Error initializing Gemini: {e}")
                 self.client = None
         else:
             print(f"⚠️ No valid GEMINI_API_KEY found. Got: {self.api_key[:10] if self.api_key else 'None'}...")
             self.client = None
+
+    def _find_working_model(self):
+        """Find a working model by testing each one"""
+        for model_name in self.model_names:
+            try:
+                test_response = self.client.models.generate_content(
+                    model=model_name,
+                    contents="Hello, are you working?"
+                )
+                if test_response and test_response.text:
+                    self.working_model = model_name
+                    print(f"✅ Found working model: {model_name}")
+                    return True
+            except Exception as e:
+                print(f"❌ Model {model_name} failed: {str(e)[:50]}...")
+                continue
+        return False
 
     def process_document(self, file_content: bytes, filename: str) -> str:
         try:
@@ -79,7 +111,8 @@ class SmartAIService:
 
     def query_with_context(self, question: str) -> Dict:
         try:
-            if not self.client:
+            # If no client or working model, use fallback
+            if not self.client or not self.working_model:
                 return {
                     "success": True,
                     "response": self._fallback_response(question),
@@ -116,7 +149,7 @@ Please provide a helpful response.
 """
 
             response = self.client.models.generate_content(
-                model='gemini-2.0-flash-exp',
+                model=self.working_model,
                 contents=prompt
             )
             
@@ -128,15 +161,19 @@ Please provide a helpful response.
             }
 
         except Exception as e:
+            # If Gemini fails, use fallback
             return {
-                "success": False,
-                "error": f"⚠️ Gemini Error: {str(e)}"
+                "success": True,
+                "response": self._fallback_response(question),
+                "used_context": False,
+                "documents_used": len(self.documents)
             }
 
     def _fallback_response(self, question: str) -> str:
         """Fallback pattern matching response"""
         question_lower = question.lower()
         
+        # Document summarization
         if "summarise" in question_lower or "summarize" in question_lower:
             if self.documents:
                 doc = self.documents[-1]
@@ -153,14 +190,34 @@ Please provide a helpful response.
 - Word count: {len(doc['text'].split())}
 
 What specific information would you like to know?"""
-            return "No documents uploaded yet."
+            return "No documents uploaded yet. Please upload a document first."
 
+        # Document analysis
+        if "document" in question_lower and self.documents:
+            doc = self.documents[-1]
+            return f"""📄 **Document Analysis**
+
+**File:** {doc['filename']}
+**Size:** {len(doc['text'])} characters
+
+**Key Information:**
+- {len(doc['text'].split())} words
+- {len(doc['text'].splitlines())} lines
+
+What would you like to know about this document?
+- "Summarise the document"
+- "Extract key points"
+- "Find specific information"
+"""
+
+        # Generic response
         return """💡 **I Can Help With:**
 
 **Business Data Questions:**
 - "Show me total revenue by month for 2024"
 - "What are our top 5 selling products?"
 - "Show me customer segments"
+- "What's the average order value?"
 
 **Document Questions (after upload):**
 - "Summarise the document"
