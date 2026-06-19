@@ -1,25 +1,23 @@
 import os
 import tempfile
 from typing import Dict
-import google.generativeai as genai
+from google import genai
 
 class SmartAIService:
     def __init__(self):
         self.documents = []
         self.api_key = os.getenv("GEMINI_API_KEY")
         
-        if self.api_key:
+        if self.api_key and len(self.api_key) > 20:
             try:
-                genai.configure(api_key=self.api_key)
-                # Use the correct model name
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
-                print("✅ Smart AI Service initialized with Google Gemini (FREE!)")
+                self.client = genai.Client(api_key=self.api_key)
+                print("✅ Smart AI Service initialized with Google Gemini (NEW SDK)")
             except Exception as e:
                 print(f"⚠️ Error initializing Gemini: {e}")
-                self.model = None
+                self.client = None
         else:
-            print("⚠️ No GEMINI_API_KEY found. Using pattern matching fallback.")
-            self.model = None
+            print(f"⚠️ No valid GEMINI_API_KEY found. Got: {self.api_key[:10] if self.api_key else 'None'}...")
+            self.client = None
 
     def process_document(self, file_content: bytes, filename: str) -> str:
         try:
@@ -81,8 +79,7 @@ class SmartAIService:
 
     def query_with_context(self, question: str) -> Dict:
         try:
-            # If no API key or model, use pattern matching fallback
-            if not self.model:
+            if not self.client:
                 return {
                     "success": True,
                     "response": self._fallback_response(question),
@@ -99,67 +96,36 @@ class SmartAIService:
                     context += doc['text'][:2000] + "\n\n"
                 context = context[:6000]
 
-            # Build prompt
             if context:
                 prompt = f"""
-You are Oracle Orange, an AI business analyst assistant. You help users analyze data, documents, and provide business insights. Be thorough, professional, and helpful.
+You are Oracle Orange, an AI business analyst assistant.
 
 {context}
 
 User Question: {question}
 
-Please answer based on the context above. If the context doesn't contain the exact answer, use your general knowledge but be honest about it.
-Be thorough and professional in your response.
+Please answer based on the context above. Be thorough and professional.
 """
             else:
                 prompt = f"""
-You are Oracle Orange, an AI business analyst assistant. You help users analyze data, documents, and provide business insights. Be thorough, professional, and helpful.
+You are Oracle Orange, an AI business analyst assistant.
 
 User Question: {question}
 
-Please provide a helpful, thorough response. If you don't know something, be honest about it.
+Please provide a helpful response.
 """
 
-            # Try different model names if one fails
-            models_to_try = [
-                'gemini-1.5-flash',
-                'gemini-1.5-pro',
-                'gemini-pro',
-                'models/gemini-1.5-flash',
-                'models/gemini-pro'
-            ]
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=prompt
+            )
             
-            last_error = None
-            for model_name in models_to_try:
-                try:
-                    model = genai.GenerativeModel(model_name)
-                    response = model.generate_content(prompt)
-                    return {
-                        "success": True,
-                        "response": response.text,
-                        "used_context": bool(context),
-                        "documents_used": len(self.documents)
-                    }
-                except Exception as e:
-                    last_error = str(e)
-                    continue
-            
-            # If all models fail, try with a simpler prompt
-            try:
-                # Try with just the question
-                model = genai.GenerativeModel('gemini-1.5-flash')
-                response = model.generate_content(question)
-                return {
-                    "success": True,
-                    "response": response.text,
-                    "used_context": False,
-                    "documents_used": len(self.documents)
-                }
-            except Exception as e:
-                return {
-                    "success": False,
-                    "error": f"⚠️ Gemini Error: {last_error}"
-                }
+            return {
+                "success": True,
+                "response": response.text,
+                "used_context": bool(context),
+                "documents_used": len(self.documents)
+            }
 
         except Exception as e:
             return {
@@ -168,7 +134,7 @@ Please provide a helpful, thorough response. If you don't know something, be hon
             }
 
     def _fallback_response(self, question: str) -> str:
-        """Fallback pattern matching response when Gemini is not available"""
+        """Fallback pattern matching response"""
         question_lower = question.lower()
         
         if "summarise" in question_lower or "summarize" in question_lower:
@@ -186,25 +152,8 @@ Please provide a helpful, thorough response. If you don't know something, be hon
 - Total characters: {len(doc['text'])}
 - Word count: {len(doc['text'].split())}
 
-I've analyzed this document. What specific information would you like to know?"""
-            return "No documents have been uploaded yet. Please upload a document first."
-
-        if "document" in question_lower and self.documents:
-            doc = self.documents[-1]
-            return f"""📄 **Document Analysis**
-
-**File:** {doc['filename']}
-**Size:** {len(doc['text'])} characters
-
-**Key Information:**
-- {len(doc['text'].split())} words
-- {len(doc['text'].splitlines())} lines
-
-**What would you like to know about this document?**
-- "Summarise the document"
-- "Extract key points"
-- "Find specific information"
-"""
+What specific information would you like to know?"""
+            return "No documents uploaded yet."
 
         return """💡 **I Can Help With:**
 
@@ -212,7 +161,6 @@ I've analyzed this document. What specific information would you like to know?""
 - "Show me total revenue by month for 2024"
 - "What are our top 5 selling products?"
 - "Show me customer segments"
-- "What's the average order value?"
 
 **Document Questions (after upload):**
 - "Summarise the document"
